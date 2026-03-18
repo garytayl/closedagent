@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { gitRouter } from "./routes/git";
+import { registerMcpRoutes } from "./routes/mcp";
 import { vercelRouter } from "./routes/vercel";
 import { AppError } from "./utils/appError";
 import { logger } from "./utils/logger";
@@ -18,6 +19,7 @@ app.get("/health", (_req: Request, res: Response) => {
 
 app.use("/vercel", vercelRouter);
 app.use("/git", gitRouter);
+registerMcpRoutes(app);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({

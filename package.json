@@ -1,0 +1,9 @@
+{
+  "name": "closedagent-root",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix mcp-server install && npm --prefix mcp-server run build",
+    "start": "npm --prefix mcp-server run start",
+    "dev": "npm --prefix mcp-server run dev"
+  }
+}

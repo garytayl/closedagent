@@ -7,12 +7,12 @@ vercelRouter.post(
   "/status",
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const projectId = req.body?.projectId ?? process.env.VERCEL_PROJECT_ID;
+      const projectId = req.body?.projectId;
 
-      if (!projectId || typeof projectId !== "string") {
+      if (projectId !== undefined && typeof projectId !== "string") {
         res.status(400).json({
           error: {
-            message: "projectId is required"
+            message: "projectId must be a string when provided"
           }
         });
         return;

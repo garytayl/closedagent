@@ -146,19 +146,22 @@ const extractLogLine = (event: unknown): string => {
 };
 
 export const vercelService = {
-  async getLatestDeploymentStatus(projectId: string): Promise<DeploymentStatusResponse> {
+  async getLatestDeploymentStatus(projectId?: string): Promise<DeploymentStatusResponse> {
     const headers = {
       ...getAuthHeader(),
       "Content-Type": "application/json"
     };
 
-    const params = new URLSearchParams({
-      projectId,
-      limit: "1"
-    });
+    const params = new URLSearchParams({ limit: "1" });
+    if (projectId && projectId.trim().length > 0) {
+      params.set("projectId", projectId.trim());
+    }
     const url = `${VERCEL_API_BASE}/v6/deployments?${params.toString()}`;
 
-    logger.info("Fetching latest Vercel deployment status", { projectId });
+    logger.info("Fetching latest Vercel deployment status", {
+      scope: projectId ? "project" : "all-projects",
+      projectId: projectId ?? null
+    });
     const data = await requestWithRetry(url, {
       method: "GET",
       headers
@@ -169,7 +172,10 @@ export const vercelService = {
 
     const deployments = Array.isArray(data.deployments) ? data.deployments : [];
     if (deployments.length === 0) {
-      throw new AppError("No deployments found for project", 404);
+      throw new AppError(
+        projectId ? "No deployments found for project" : "No deployments found",
+        404
+      );
     }
 
     const latest = deployments[0] as JsonRecord;

@@ -17,6 +17,19 @@ export interface DeploymentLogsResponse {
   logs: string;
 }
 
+export interface WaitForDeploymentOptions {
+  projectId?: string;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  requireNewDeployment?: boolean;
+}
+
+export interface WaitForDeploymentResponse extends DeploymentStatusResponse {
+  previousDeploymentId: string | null;
+  isNewDeployment: boolean;
+  attempts: number;
+}
+
 type JsonRecord = Record<string, unknown>;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -244,5 +257,58 @@ export const vercelService = {
     }
 
     throw new AppError("Unable to fetch deployment logs", 502);
+  },
+
+  async waitForDeploymentAfter(
+    previousDeploymentId: string | undefined,
+    options: WaitForDeploymentOptions = {}
+  ): Promise<WaitForDeploymentResponse> {
+    const timeoutMs = options.timeoutMs ?? 5 * 60_000;
+    const pollIntervalMs = options.pollIntervalMs ?? 5_000;
+    const previousId = previousDeploymentId?.trim() ? previousDeploymentId.trim() : null;
+    const requireNewDeployment = options.requireNewDeployment ?? Boolean(previousId);
+    const startedAtMs = Date.now();
+    let attempts = 0;
+    let lastStatus: DeploymentStatusResponse | null = null;
+
+    logger.info("Waiting for Vercel deployment update", {
+      previousDeploymentId: previousId,
+      projectId: options.projectId ?? null,
+      timeoutMs,
+      pollIntervalMs,
+      requireNewDeployment
+    });
+
+    while (Date.now() - startedAtMs <= timeoutMs) {
+      attempts += 1;
+      const latest = await this.getLatestDeploymentStatus(options.projectId);
+      lastStatus = latest;
+      const isNewDeployment = previousId ? latest.deploymentId !== previousId : false;
+
+      if (requireNewDeployment) {
+        if (isNewDeployment && latest.status !== "BUILDING") {
+          return {
+            ...latest,
+            previousDeploymentId: previousId,
+            isNewDeployment,
+            attempts
+          };
+        }
+      } else if (latest.status !== "BUILDING") {
+        return {
+          ...latest,
+          previousDeploymentId: previousId,
+          isNewDeployment,
+          attempts
+        };
+      }
+
+      await sleep(pollIntervalMs);
+    }
+
+    const statusMessage = lastStatus
+      ? `last deployment ${lastStatus.deploymentId} is ${lastStatus.status}`
+      : "no deployment status was retrieved";
+    throw new AppError(`Timed out waiting for deployment update: ${statusMessage}`, 504);
   }
 };

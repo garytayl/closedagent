@@ -107,6 +107,88 @@ const createToolServer = (): McpServer => {
     }
   );
 
+  server.registerTool(
+    "git_commit_and_check_vercel",
+    {
+      title: "Commit, Push, and Check Vercel Deployment",
+      description:
+        "Commit and push changes, wait for Vercel deployment result, and return deployment logs on failure.",
+      inputSchema: {
+        message: z.string().min(1).describe("Commit message"),
+        projectId: z.string().optional().describe("Optional Vercel project ID"),
+        timeoutSeconds: z
+          .number()
+          .int()
+          .min(30)
+          .max(1800)
+          .optional()
+          .describe("How long to wait for deployment completion. Defaults to 300 seconds."),
+        pollIntervalSeconds: z
+          .number()
+          .int()
+          .min(2)
+          .max(60)
+          .optional()
+          .describe("Polling interval for deployment status checks. Defaults to 5 seconds.")
+      }
+    },
+    async ({ message, projectId, timeoutSeconds, pollIntervalSeconds }) => {
+      try {
+        let previousDeploymentId: string | undefined;
+
+        try {
+          const previousDeployment = await vercelService.getLatestDeploymentStatus(projectId);
+          previousDeploymentId = previousDeployment.deploymentId;
+        } catch (error) {
+          logger.warn("Unable to capture baseline deployment before push", {
+            message: getErrorMessage(error),
+            projectId: projectId ?? null
+          });
+        }
+
+        const commitResult = await gitService.commitAndPush(message);
+        const deployment = await vercelService.waitForDeploymentAfter(previousDeploymentId, {
+          projectId,
+          timeoutMs: (timeoutSeconds ?? 300) * 1000,
+          pollIntervalMs: (pollIntervalSeconds ?? 5) * 1000,
+          requireNewDeployment: Boolean(previousDeploymentId)
+        });
+
+        const result: Record<string, unknown> = {
+          commit: commitResult,
+          deployment
+        };
+
+        if (deployment.status === "ERROR") {
+          try {
+            const logs = await vercelService.getDeploymentLogs(deployment.deploymentId);
+            result.logs = logs.logs;
+          } catch (error) {
+            result.logsError = getErrorMessage(error);
+          }
+
+          return {
+            isError: true,
+            content: [{ type: "text", text: jsonText(result) }],
+            structuredContent: result
+          };
+        }
+
+        return {
+          content: [{ type: "text", text: jsonText(result) }],
+          structuredContent: result
+        };
+      } catch (error) {
+        const message = getErrorMessage(error);
+        return {
+          isError: true,
+          content: [{ type: "text", text: message }],
+          structuredContent: { error: { message } }
+        };
+      }
+    }
+  );
+
   return server;
 };
 
